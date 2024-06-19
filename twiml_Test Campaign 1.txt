@@ -1,0 +1,14 @@
+<Response>
+
+ <Start>
+    <Stream track="inbound_track" url="wss://286a-182-69-183-158.ngrok-free.app/ws">
+    </Stream>
+  </Start>
+
+<Gather input="speech" action="https://286a-182-69-183-158.ngrok-free.app/gather" speechTimeout ="auto">
+  </Gather>
+<Say> Hello from customer </Say>
+<Gather input="speech" action="https://286a-182-69-183-158.ngrok-free.app/gather" speechTimeout ="auto">
+  </Gather>
+<Say>thank you</Say>
+</Response>

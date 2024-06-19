@@ -14,19 +14,20 @@ public class AudioService {
     private ConcurrentHashMap<String, RandomAccessFile> files = new ConcurrentHashMap<>();
 
     // Recording Methods
-    public void startRecording(String sessionId) throws IOException {
+    public String startRecording(String sessionId) throws IOException {
         String fileName = createRecordingFileName(sessionId);
         RandomAccessFile file = new RandomAccessFile(fileName, "rw");
         files.put(sessionId, file);
         writeWavHeader(file);
         logger.info("Recording started: " + fileName);
+        return fileName;
     }
 
     public void writeData(String sessionId, byte[] data) throws IOException {
         RandomAccessFile file = files.get(sessionId);
         if (file != null) {
             file.write(data);
-            logger.info("Data written for session: " + sessionId);
+//            logger.info("Data written for session: " + sessionId);
         } else {
             logger.warning("No file found for session: " + sessionId);
         }

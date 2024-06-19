@@ -1,6 +1,9 @@
 package com.example.demo.websocket;
 
+import com.example.demo.model.CallDetail;
+import com.example.demo.model.Campaign;
 import com.example.demo.service.AudioService;
+import com.example.demo.controller.CallController;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.api.gax.core.FixedCredentialsProvider;
@@ -31,12 +34,14 @@ import java.util.logging.Logger;
 public class TwilioWebSocketHandler extends TextWebSocketHandler {
 
     private static final Logger logger = Logger.getLogger(TwilioWebSocketHandler.class.getName());
-    private static  AudioService audioService = null;
+    private static AudioService audioService = null;
     private final ConcurrentMap<String, SessionData> sessionDataMap = new ConcurrentHashMap<>();
+    private final CallController callController;
 
     @Autowired
-    public TwilioWebSocketHandler(AudioService audioService) {
+    public TwilioWebSocketHandler(AudioService audioService, CallController callController) {
         TwilioWebSocketHandler.audioService = audioService;
+        this.callController = callController;
     }
 
     @Override
@@ -52,18 +57,29 @@ public class TwilioWebSocketHandler extends TextWebSocketHandler {
 
         switch (event) {
             case "start":
-                handleStartEvent(sessionId);
+                System.out.println("start start start start");
+                handleStartEvent(sessionId, jsonNode);
                 break;
             case "media":
+                System.out.println("media media media media");
+
                 handleMediaEvent(sessionId, jsonNode);
                 break;
             case "stop":
+                System.out.println("stop stop stop stop");
                 handleStopEvent(sessionId);
                 break;
         }
     }
 
-    private void handleStartEvent(String sessionId) throws IOException {
+    private void handleStartEvent(String sessionId, JsonNode jsonNode) throws IOException {
+        String callSid = jsonNode.path("start").path("callSid").asText();
+        if (callSid == null || callSid.isEmpty()) {
+            logger.severe("Missing callSid in start event");
+            return;
+        }
+
+        callController.updateSessionId(callSid, sessionId);
         initializeSpeechClient(sessionId);
         audioService.startRecording(sessionId);
         startTranscription(sessionId);
@@ -74,6 +90,12 @@ public class TwilioWebSocketHandler extends TextWebSocketHandler {
         byte[] data = Base64.getDecoder().decode(payload);
         audioService.writeData(sessionId, data);
         sendToTranscriptionStream(sessionId, data);
+
+        // Store Base64 encoded audio data in CallDetail
+        CallDetail callDetail = getCallDetailBySessionId(sessionId);
+        if (callDetail != null) {
+            callDetail.addBase64EncodedAudio(payload);
+        }
     }
 
     private void handleStopEvent(String sessionId) throws IOException {
@@ -88,7 +110,7 @@ public class TwilioWebSocketHandler extends TextWebSocketHandler {
                 .setCredentialsProvider(FixedCredentialsProvider.create(credentials))
                 .build();
         SpeechClient speechClient = SpeechClient.create(speechSettings);
-        sessionDataMap.put(sessionId, new SessionData(speechClient));
+        sessionDataMap.put(sessionId, new SessionData(speechClient, sessionId, callController, this));
         logger.info("SpeechClient initialized for session: " + sessionId);
     }
 
@@ -122,7 +144,7 @@ public class TwilioWebSocketHandler extends TextWebSocketHandler {
                 .setAudioContent(ByteString.copyFrom(data))
                 .build();
         sessionData.getClientStream().send(request);
-        logger.info("Sent audio data to transcription stream for session: " + sessionId);
+//        logger.info("Sent audio data to transcription stream for session: " + sessionId);
     }
 
     private void stopTranscription(String sessionId) throws IOException {
@@ -142,6 +164,20 @@ public class TwilioWebSocketHandler extends TextWebSocketHandler {
         logger.info("Stopped transcription and closed SpeechClient for session: " + sessionId);
     }
 
+    private CallDetail getCallDetailBySessionId(String sessionId) {
+        String callSid = callController.getSessionToCallMap().get(sessionId);
+        if (callSid != null) {
+            for (Campaign campaign : callController.getCampaigns().values()) {
+                for (CallDetail callDetail : campaign.getCallDetails()) {
+                    if (callDetail.getCallSid().equals(callSid)) {
+                        return callDetail;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
     private static class SessionData {
         @Getter
         private final SpeechClient speechClient;
@@ -152,9 +188,15 @@ public class TwilioWebSocketHandler extends TextWebSocketHandler {
         private final ResponseObserver<StreamingRecognizeResponse> responseObserver;
         @Setter
         private String transcriptionFileName;
+        private final String sessionId;
+        private final CallController callController;
+        private final TwilioWebSocketHandler handler;
 
-        public SessionData(SpeechClient speechClient) {
+        public SessionData(SpeechClient speechClient, String sessionId, CallController callController, TwilioWebSocketHandler handler) {
             this.speechClient = speechClient;
+            this.sessionId = sessionId;
+            this.callController = callController;
+            this.handler = handler;
             this.responseObserver = new ResponseObserver<StreamingRecognizeResponse>() {
                 @Override
                 public void onStart(StreamController controller) {
@@ -168,6 +210,12 @@ public class TwilioWebSocketHandler extends TextWebSocketHandler {
                         try {
                             audioService.writeTranscription(transcriptionFileName, transcript);
                             logger.info("Received transcription: " + transcript);
+
+                            // Update the CallDetail with the transcript
+                            CallDetail callDetail = handler.getCallDetailBySessionId(sessionId);
+                            if (callDetail != null) {
+                                callDetail.addTranscript(transcript);
+                            }
                         } catch (IOException e) {
                             logger.log(Level.SEVERE, "Failed to write transcription", e);
                         }
@@ -185,6 +233,5 @@ public class TwilioWebSocketHandler extends TextWebSocketHandler {
                 }
             };
         }
-
     }
 }
