@@ -36,6 +36,10 @@ public class Campaign {
         return twimlInstruction;
     }
 
+    public void setTwimlInstruction(String twimlInstruction) {
+        this.twimlInstruction = twimlInstruction;
+    }
+
     public int getNumberOfCalls() {
         return numberOfCalls;
     }

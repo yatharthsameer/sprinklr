@@ -2,6 +2,7 @@ package com.example.demo.controller;
 
 import com.example.demo.model.CallDetail;
 import com.example.demo.model.Campaign;
+import com.example.demo.model.Step;
 import com.example.demo.repository.CampaignRepository;
 import com.example.demo.service.AudioService;
 import com.example.demo.service.TwiMLHandler;
@@ -27,8 +28,7 @@ import java.util.logging.Logger;
 @RestController
 public class CallController {
 
-//    private final String ACCOUNT_SID =
-//    private final String AUTH_TOKEN =
+
     private AtomicInteger completedCalls;
     private DeferredResult<ResponseEntity<Object>> deferredResult;
     private int totalCalls;
@@ -46,7 +46,6 @@ public class CallController {
     @Autowired
     private AudioService audioService;
 
-
     @Autowired
     private TwiMLHandler twiMLHandler;
 
@@ -56,23 +55,34 @@ public class CallController {
 
     @PostMapping("/createCalls")
     public DeferredResult<ResponseEntity<Object>> createCalls(
-            @RequestParam String campaignName,
-            @RequestParam String to,
-            @RequestParam String from,
-            @RequestParam String twiml,
-            @RequestParam int numberOfConcurrentCalls,
-            @RequestParam String expectedTranscription) throws IOException {
+            @RequestBody Map<String, Object> payload) throws IOException {
 
-        logger.info("Creating calls for campaign: " + campaignName);
-        totalCalls = numberOfConcurrentCalls;
-        completedCalls = new AtomicInteger(0);
-        deferredResult = new DeferredResult<>();
+        String campaignName = (String) payload.get("campaignName");
+        String to = (String) payload.get("to");
+        String from = (String) payload.get("from");
+        int numberOfConcurrentCalls = (int) payload.get("numberOfConcurrentCalls");
 
-        // Save TwiML to a file
+        List<Map<String, Object>> steps = (List<Map<String, Object>>) payload.get("steps");
+
+        StringBuilder twimlBuilder = new StringBuilder();
+        twimlBuilder.append("<Response>\n");
+        twimlBuilder.append("<Start>\n");
+        twimlBuilder.append("<Stream track=\"inbound_track\" url=\"wss://b4fa-14-194-6-234.ngrok-free.app/ws\">\n");
+        twimlBuilder.append("</Stream>\n");
+        twimlBuilder.append("</Start>\n");
+
+        for (Map<String, Object> step : steps) {
+            String replyWith = (String) step.get("replyWith");
+            twimlBuilder.append(replyWith).append("\n");
+        }
+
+        twimlBuilder.append("</Response>");
+
+        String twiml = twimlBuilder.toString();
         String filePath = "twiml_" + campaignName + ".txt";
         twiMLHandler.saveTwiMLToFile(twiml, filePath);
 
-        Campaign campaign = new Campaign(campaignName, twiml, numberOfConcurrentCalls, expectedTranscription, filePath);
+        Campaign campaign = new Campaign(campaignName, twiml, numberOfConcurrentCalls, "", filePath);
         campaigns.put(campaignName, campaign);
         campaignRepository.save(campaign); // Save initial campaign state
 
@@ -80,15 +90,29 @@ public class CallController {
             Call call = Call.creator(new PhoneNumber(to), new PhoneNumber(from), new Twiml(twiml))
                     .setMethod(HttpMethod.GET)
                     .setRecord(true)
-                    .setStatusCallback("https://286a-182-69-183-158.ngrok-free.app/events")
+                    .setStatusCallback("https://b4fa-14-194-6-234.ngrok-free.app/events")
                     .setStatusCallbackMethod(HttpMethod.POST)
                     .setStatusCallbackEvent(Arrays.asList("completed"))
                     .create();
             logger.info("Call initiated with SID: " + call.getSid());
             CallDetail callDetail = new CallDetail(null, call.getSid()); // Initialize with null sessionId
+
+            // Store steps in CallDetail
+            for (Map<String, Object> step : steps) {
+                String description = (String) step.get("description");
+                String expectToHear = (String) step.get("expectToHear");
+                String replyWith = (String) step.get("replyWith");
+                Step callStep = new Step(description, expectToHear, replyWith);
+                callDetail.addStep(callStep);
+            }
+
             campaign.addCallDetail(callDetail);
             callSidToCampaignMap.put(call.getSid(), campaignName); // Map callSid to campaignName
         }
+
+        deferredResult = new DeferredResult<>();
+        totalCalls = numberOfConcurrentCalls;
+        completedCalls = new AtomicInteger(0);
 
         return deferredResult;
     }
@@ -145,7 +169,6 @@ public class CallController {
         }
     }
 
-
     @PostMapping("/gather")
     public ResponseEntity<String> handleGatherCallback(
             @RequestParam("CallSid") String callSid,
@@ -159,6 +182,17 @@ public class CallController {
         String campaignName = callSidToCampaignMap.get(callSid);
         Campaign campaign = campaigns.get(campaignName);
 
+        // Update the transcript for the current step
+        CallDetail callDetail = getCallDetailByCallSid(callSid, campaign);
+        if (callDetail != null) {
+            for (Step step : callDetail.getSteps()) {
+                if (step.getReplyWith().contains("<Gather") && step.getGatherTranscript() == null) {
+                    step.setGatherTranscript(speechResult);
+                    break;
+                }
+            }
+        }
+
         // Read TwiML instructions from file
         List<String> twimlLines = twiMLHandler.readTwiMLFromFile(campaign.getTwimlFilePath());
 
@@ -168,13 +202,13 @@ public class CallController {
         responseTwiml.append("<Response>\n");
 
         boolean foundGather = false;
-
         for (int i = lastHandledGatherIndex + 1; i < twimlLines.size(); i++) {
             String line = twimlLines.get(i);
             if (line.contains("<Gather")) {
                 foundGather = true;
             }
             if (foundGather) {
+                responseTwiml.append(twimlLines.get(i-1));
                 responseTwiml.append(line).append("\n");
             }
             if (line.contains("</Gather>")) {
@@ -187,10 +221,20 @@ public class CallController {
 
         // Save the campaign state
         campaignRepository.save(campaign);
+        System.out.println("responseTwiML"+responseTwiml);
 
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_XML)
                 .body(responseTwiml.toString());
+    }
+
+    private CallDetail getCallDetailByCallSid(String callSid, Campaign campaign) {
+        for (CallDetail callDetail : campaign.getCallDetails()) {
+            if (callDetail.getCallSid().equals(callSid)) {
+                return callDetail;
+            }
+        }
+        return null;
     }
 
     private String getSessionIdByCallSid(String callSid) {
@@ -256,7 +300,8 @@ public class CallController {
                 logger.info(" - Session ID: " + callDetail.getSessionId());
                 logger.info(" - Call SID: " + callDetail.getCallSid());
                 logger.info(" - Transcript: " + callDetail.getTranscript());
-                logger.info(" - audio: " + callDetail.getAudioFilePath());
+                logger.info(" - Audio File Path: " + callDetail.getAudioFilePath());
+                logger.info(" - Steps: " + callDetail.getSteps());
             }
         }
     }

@@ -1,5 +1,7 @@
 package com.example.demo.service;
 
+import org.springframework.stereotype.Service;
+
 import java.io.*;
 import java.util.ArrayList;
 import java.util.List;
@@ -10,7 +12,7 @@ import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
 
-
+@Service
 public class TwiMLHandler {
 
     private static final Logger logger = Logger.getLogger(TwiMLHandler.class.getName());

@@ -58,10 +58,12 @@ public class TwilioWebSocketHandler extends TextWebSocketHandler {
         switch (event) {
             case "start":
                 System.out.println("start start start start");
+
                 handleStartEvent(sessionId, jsonNode);
                 break;
             case "media":
-                System.out.println("media media media media");
+                System.out.println("media");
+
 
                 handleMediaEvent(sessionId, jsonNode);
                 break;

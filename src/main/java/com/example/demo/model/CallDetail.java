@@ -3,6 +3,7 @@ package com.example.demo.model;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Document
@@ -13,7 +14,8 @@ public class CallDetail {
     private String callSid;
     private String transcript;
     private String base64EncodedAudio;
-    private String audioFilePath; // New field
+    private String audioFilePath;
+    private List<Step> steps = new ArrayList<>();
 
     // Constructors, getters, and setters
 
@@ -23,7 +25,6 @@ public class CallDetail {
         this.transcript = "";
         this.base64EncodedAudio = "";
         this.audioFilePath = "";
-
     }
 
     public String getSessionId() {
@@ -66,4 +67,11 @@ public class CallDetail {
         this.audioFilePath = audioFilePath;
     }
 
+    public List<Step> getSteps() {
+        return steps;
+    }
+
+    public void addStep(Step step) {
+        this.steps.add(step);
+    }
 }
