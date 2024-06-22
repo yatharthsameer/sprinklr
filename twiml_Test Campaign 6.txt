@@ -1,0 +1,24 @@
+<Response>
+<Start>
+
+<Stream track="inbound_track" url="wss://b4fa-14-194-6-234.ngrok-free.app/ws">
+</Stream>
+
+
+</Start>
+
+<Gather input="speech" action="https://b4fa-14-194-6-234.ngrok-free.app/gather" speechTimeout ="auto">   </Gather>
+
+<Gather input="speech" action="https://b4fa-14-194-6-234.ngrok-free.app/gather" speechTimeout ="auto">   </Gather>
+<Say>Reward Points</Say>
+<Gather input="speech" action="https://b4fa-14-194-6-234.ngrok-free.app/gather" speechTimeout ="auto">   </Gather>
+<Say>Yes</Say>
+<Gather input="speech" action="https://b4fa-14-194-6-234.ngrok-free.app/gather" speechTimeout ="auto">   </Gather>
+<Say>Yes</Say>
+<Gather input="speech" action="https://b4fa-14-194-6-234.ngrok-free.app/gather" speechTimeout ="auto">   </Gather>
+
+<Play digits="1000"></Play>
+
+<Gather input="speech" action="https://b4fa-14-194-6-234.ngrok-free.app/gather" speechTimeout ="auto">   </Gather>
+<Say>thank you</Say>
+</Response>

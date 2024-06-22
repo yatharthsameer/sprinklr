@@ -5,6 +5,7 @@ public class Step {
     private String expectToHear;
     private String replyWith;
     private String gatherTranscript;
+    private String confidence; // New field
 
     // Constructors, getters, and setters
 
@@ -13,6 +14,7 @@ public class Step {
         this.expectToHear = expectToHear;
         this.replyWith = replyWith;
         this.gatherTranscript = null;
+        this.confidence = null;
     }
 
     public String getDescription() {
@@ -45,5 +47,13 @@ public class Step {
 
     public void setGatherTranscript(String gatherTranscript) {
         this.gatherTranscript = gatherTranscript;
+    }
+
+    public String getConfidence() {
+        return confidence;
+    }
+
+    public void setConfidence(String confidence) {
+        this.confidence = confidence;
     }
 }

@@ -5,6 +5,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @Document
 public class Campaign {
@@ -14,19 +15,23 @@ public class Campaign {
     private String twimlInstruction;
     private int numberOfCalls;
     private List<CallDetail> callDetails = new ArrayList<>();
-    private String expectedTranscription;
-    private String twimlFilePath; // New field
-    private int lastHandledGatherIndex = -1; // New field to keep track of the last handled gather index
+    private String twimlFilePath;
+    private String randomIndex;
 
-    // Constructors, getters, and setters
+    // No-argument constructor
+    public Campaign() {
+        this.randomIndex = UUID.randomUUID().toString();
+    }
 
-    public Campaign(String campaignName, String twimlInstruction, int numberOfCalls, String expectedTranscription, String twimlFilePath) {
+    public Campaign(String campaignName, String twimlInstruction, int numberOfCalls, String twimlFilePath) {
         this.campaignName = campaignName;
         this.twimlInstruction = twimlInstruction;
         this.numberOfCalls = numberOfCalls;
-        this.expectedTranscription = expectedTranscription;
         this.twimlFilePath = twimlFilePath;
+        this.randomIndex = UUID.randomUUID().toString(); // Generate a random unique index
     }
+
+
 
     public String getCampaignName() {
         return campaignName;
@@ -52,14 +57,6 @@ public class Campaign {
         this.callDetails.add(callDetail);
     }
 
-    public String getExpectedTranscription() {
-        return expectedTranscription;
-    }
-
-    public void setExpectedTranscription(String expectedTranscription) {
-        this.expectedTranscription = expectedTranscription;
-    }
-
     public String getTwimlFilePath() {
         return twimlFilePath;
     }
@@ -68,11 +65,13 @@ public class Campaign {
         this.twimlFilePath = twimlFilePath;
     }
 
-    public int getLastHandledGatherIndex() {
-        return lastHandledGatherIndex;
+
+
+    public String getRandomIndex() {
+        return randomIndex;
     }
 
-    public void setLastHandledGatherIndex(int lastHandledGatherIndex) {
-        this.lastHandledGatherIndex = lastHandledGatherIndex;
+    public void setRandomIndex(String randomIndex) {
+        this.randomIndex = randomIndex;
     }
 }

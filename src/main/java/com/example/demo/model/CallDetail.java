@@ -16,8 +16,10 @@ public class CallDetail {
     private String base64EncodedAudio;
     private String audioFilePath;
     private List<Step> steps = new ArrayList<>();
+    private int lastHandledGatherIndex;
 
     // Constructors, getters, and setters
+
 
     public CallDetail(String sessionId, String callSid) {
         this.sessionId = sessionId;
@@ -25,7 +27,19 @@ public class CallDetail {
         this.transcript = "";
         this.base64EncodedAudio = "";
         this.audioFilePath = "";
+        this.lastHandledGatherIndex = -1;  // Default value
     }
+
+    public void initializeLastHandledGatherIndex(String twimlInstruction) {
+        String[] lines = twimlInstruction.split("\n");
+        for (int i = 0; i < lines.length; i++) {
+            if (lines[i].contains("</Gather>")) {
+                this.lastHandledGatherIndex = i;
+                break;
+            }
+        }
+    }
+
 
     public String getSessionId() {
         return sessionId;
@@ -73,5 +87,13 @@ public class CallDetail {
 
     public void addStep(Step step) {
         this.steps.add(step);
+    }
+
+    public int getLastHandledGatherIndex() {
+        return lastHandledGatherIndex;
+    }
+
+    public void setLastHandledGatherIndex(int lastHandledGatherIndex) {
+        this.lastHandledGatherIndex = lastHandledGatherIndex;
     }
 }

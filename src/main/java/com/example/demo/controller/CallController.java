@@ -28,7 +28,7 @@ import java.util.logging.Logger;
 @RestController
 public class CallController {
 
-
+    
     private AtomicInteger completedCalls;
     private DeferredResult<ResponseEntity<Object>> deferredResult;
     private int totalCalls;
@@ -82,7 +82,7 @@ public class CallController {
         String filePath = "twiml_" + campaignName + ".txt";
         twiMLHandler.saveTwiMLToFile(twiml, filePath);
 
-        Campaign campaign = new Campaign(campaignName, twiml, numberOfConcurrentCalls, "", filePath);
+        Campaign campaign = new Campaign(campaignName, twiml, numberOfConcurrentCalls, filePath);
         campaigns.put(campaignName, campaign);
         campaignRepository.save(campaign); // Save initial campaign state
 
@@ -96,6 +96,7 @@ public class CallController {
                     .create();
             logger.info("Call initiated with SID: " + call.getSid());
             CallDetail callDetail = new CallDetail(null, call.getSid()); // Initialize with null sessionId
+            callDetail.initializeLastHandledGatherIndex(twiml); // Initialize the lastHandledGatherIndex
 
             // Store steps in CallDetail
             for (Map<String, Object> step : steps) {
@@ -150,21 +151,59 @@ public class CallController {
         return ResponseEntity.ok(campaigns);
     }
 
+    @GetMapping("/campaign/{randomIndex}")
+    public ResponseEntity<Campaign> getCampaignByRandomIndex(@PathVariable String randomIndex) {
+        Campaign campaign = campaignRepository.findByRandomIndex(randomIndex);
+        if (campaign == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(campaign);
+    }
+
     @GetMapping("/audio/{sessionId}")
     public ResponseEntity<byte[]> getAudio(@PathVariable String sessionId) {
-        String filePath = getFilePathBySessionId(sessionId);
+        logger.info("Received request for audio with sessionId: " + sessionId);
+
+        Campaign campaign = campaignRepository.findByCallDetailsSessionId(sessionId);
+        if (campaign == null) {
+            logger.severe("No campaign found for sessionId: " + sessionId);
+            return ResponseEntity.notFound().build();
+        }
+
+        CallDetail callDetail = campaign.getCallDetails().stream()
+                .filter(cd -> sessionId.equals(cd.getSessionId()))
+                .findFirst()
+                .orElse(null);
+
+        if (callDetail == null) {
+            logger.severe("No CallDetail found for sessionId: " + sessionId);
+            return ResponseEntity.notFound().build();
+        }
+
+        String filePath = callDetail.getAudioFilePath();
+        logger.info("Resolved filePath: " + filePath);
+
         if (filePath != null) {
             try {
                 File file = new File(filePath);
+                logger.info("Attempting to read file: " + file.getAbsolutePath());
+
+                if (!file.exists()) {
+                    logger.severe("File does not exist: " + file.getAbsolutePath());
+                    return ResponseEntity.notFound().build();
+                }
+
                 FileInputStream fileInputStream = new FileInputStream(file);
                 byte[] audioBytes = fileInputStream.readAllBytes();
                 fileInputStream.close();
+                logger.info("Successfully read file: " + file.getAbsolutePath());
                 return ResponseEntity.ok(audioBytes);
             } catch (IOException e) {
                 logger.severe("Failed to read audio file: " + e.getMessage());
                 return ResponseEntity.status(500).build();
             }
         } else {
+            logger.severe("File path is null for sessionId: " + sessionId);
             return ResponseEntity.notFound().build();
         }
     }
@@ -188,6 +227,7 @@ public class CallController {
             for (Step step : callDetail.getSteps()) {
                 if (step.getReplyWith().contains("<Gather") && step.getGatherTranscript() == null) {
                     step.setGatherTranscript(speechResult);
+                    step.setConfidence(confidence);
                     break;
                 }
             }
@@ -197,31 +237,24 @@ public class CallController {
         List<String> twimlLines = twiMLHandler.readTwiMLFromFile(campaign.getTwimlFilePath());
 
         // Determine the next set of instructions to return
-        int lastHandledGatherIndex = campaign.getLastHandledGatherIndex();
+        int lastHandledGatherIndex = callDetail.getLastHandledGatherIndex();
         StringBuilder responseTwiml = new StringBuilder();
         responseTwiml.append("<Response>\n");
 
-        boolean foundGather = false;
         for (int i = lastHandledGatherIndex + 1; i < twimlLines.size(); i++) {
             String line = twimlLines.get(i);
-            if (line.contains("<Gather")) {
-                foundGather = true;
-            }
-            if (foundGather) {
-                responseTwiml.append(twimlLines.get(i-1));
-                responseTwiml.append(line).append("\n");
-            }
+            responseTwiml.append(line).append("\n");
             if (line.contains("</Gather>")) {
-                campaign.setLastHandledGatherIndex(i); // Update the last handled gather index
+                callDetail.setLastHandledGatherIndex(i); // Update the last handled gather index
                 break;
             }
         }
 
         responseTwiml.append("</Response>");
 
-        // Save the campaign state
+        // Save the call detail and campaign state
         campaignRepository.save(campaign);
-        System.out.println("responseTwiML"+responseTwiml);
+        logger.info("responseTwiml: " + responseTwiml);
 
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_XML)
@@ -246,32 +279,24 @@ public class CallController {
         return null;
     }
 
-    private String getFilePathBySessionId(String sessionId) {
-        String callSid = sessionToCallMap.get(sessionId);
-        if (callSid != null) {
-            for (Campaign campaign : campaigns.values()) {
-                for (CallDetail callDetail : campaign.getCallDetails()) {
-                    if (callDetail.getCallSid().equals(callSid)) {
-                        return callDetail.getAudioFilePath();
-                    }
-                }
-            }
-        }
-        return null;
-    }
-
     public void updateSessionId(String callSid, String sessionId) {
         sessionToCallMap.put(sessionId, callSid);
+        logger.info("Updated sessionToCallMap: sessionId -> " + sessionId + ", callSid -> " + callSid);
+
         String campaignName = callSidToCampaignMap.get(callSid);
         if (campaignName != null) {
             Campaign campaign = campaigns.get(campaignName);
             for (CallDetail callDetail : campaign.getCallDetails()) {
                 if (callDetail.getCallSid().equals(callSid)) {
                     callDetail.setSessionId(sessionId);
+                    logger.info("Updated CallDetail with sessionId: " + sessionId);
                     break;
                 }
             }
             campaignRepository.save(campaign); // Update campaign in MongoDB
+            logger.info("Saved updated campaign: " + campaignName);
+        } else {
+            logger.severe("No campaign found for callSid: " + callSid);
         }
     }
 
@@ -282,10 +307,14 @@ public class CallController {
             for (CallDetail callDetail : campaign.getCallDetails()) {
                 if (callDetail.getCallSid().equals(callSid)) {
                     callDetail.setAudioFilePath(audioFilePath);
+                    logger.info("Updated CallDetail with audioFilePath: " + audioFilePath);
                     break;
                 }
             }
             campaignRepository.save(campaign); // Update campaign in MongoDB
+            logger.info("Saved updated campaign: " + campaignName);
+        } else {
+            logger.severe("No campaign found for callSid: " + callSid);
         }
     }
 
@@ -294,7 +323,6 @@ public class CallController {
             logger.info("Campaign Name: " + campaign.getCampaignName());
             logger.info("Twiml Instruction: " + campaign.getTwimlInstruction());
             logger.info("Number of Calls: " + campaign.getNumberOfCalls());
-            logger.info("Expected Transcription: " + campaign.getExpectedTranscription());
             logger.info("Call Details:");
             for (CallDetail callDetail : campaign.getCallDetails()) {
                 logger.info(" - Session ID: " + callDetail.getSessionId());
